@@ -1,0 +1,9 @@
+name: KotaOtomatis
+version: 1.0.0
+main: id.kota.KotaOtomatis
+api-version: "1.21"
+description: Desa terbentuk otomatis saat pemain membangun berdekatan
+commands:
+  desa:
+    description: Perintah desa
+    usage: /desa <info|daftar|nama|calon|vote|hasil|aturan>
