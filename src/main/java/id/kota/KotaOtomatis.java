@@ -60,8 +60,11 @@ public class KotaOtomatis extends JavaPlugin implements Listener {
         dataFile = new File(getDataFolder(), "data.yml");
         loadData();
         getServer().getPluginManager().registerEvents(this, this);
+        if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
+            new PapiHook(this).register();
+        }
         Bukkit.getScheduler().runTaskTimer(this, () -> {
-            for (Village v : villages.values()) finalizeVoteIfDue(v);
+            for (Village v : new ArrayList<>(villages.values())) finalizeVoteIfDue(v);
         }, 20L * 60, 20L * 60 * 10);
         Bukkit.getScheduler().runTaskTimer(this, this::saveData, 20L * 300, 20L * 300);
     }
@@ -177,6 +180,54 @@ public class KotaOtomatis extends JavaPlugin implements Listener {
             Player p = Bukkit.getPlayer(u);
             if (p != null) msg(p, text);
         }
+    }
+
+    // ---------- Untuk PlaceholderAPI / TAB ----------
+    String papiDesa(UUID u) {
+        Village v = villageOf(u);
+        return v == null ? "-" : v.name;
+    }
+
+    String papiPemimpin(UUID u) {
+        Village v = villageOf(u);
+        return v == null || v.leader == null ? "-" : nameOf(v.leader);
+    }
+
+    String papiWarga(UUID u) {
+        Village v = villageOf(u);
+        return v == null ? "0" : String.valueOf(v.residents.size());
+    }
+
+    String papiPeran(UUID u) {
+        Village v = villageOf(u);
+        if (v == null) return "-";
+        return u.equals(v.leader) ? "Pemimpin" : "Warga";
+    }
+
+    String papiLokasi(Player p) {
+        Village v = villageAt(p.getLocation());
+        return v == null ? "-" : v.name;
+    }
+
+    private void leaveVillage(Village v, UUID u) {
+        v.residents.remove(u);
+        v.votes.remove(u);
+        v.votes.values().removeIf(c -> c.equals(u));
+        builds.keySet().removeIf(k -> {
+            String[] s = k.split(";");
+            if (!s[0].equals(v.world) || !s[3].equals(u.toString())) return false;
+            int cx = Integer.parseInt(s[1]) * 16 + 8, cz = Integer.parseInt(s[2]) * 16 + 8;
+            return Math.abs(cx - v.x) <= v.radius && Math.abs(cz - v.z) <= v.radius;
+        });
+        if (v.residents.isEmpty()) {
+            villages.remove(v.id);
+        } else if (u.equals(v.leader)) {
+            v.leader = v.residents.iterator().next();
+            broadcastVillage(v, nameOf(u) + " keluar. Pemimpin sementara: " + nameOf(v.leader));
+        } else {
+            broadcastVillage(v, nameOf(u) + " keluar dari desa.");
+        }
+        saveData();
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -301,9 +352,8 @@ public class KotaOtomatis extends JavaPlugin implements Listener {
     public void onInteract(PlayerInteractEvent e) {
         if (e.getAction() != Action.RIGHT_CLICK_BLOCK || e.getClickedBlock() == null) return;
         Material m = e.getClickedBlock().getType();
-        if (!(e.getClickedBlock().getState() instanceof org.bukkit.block.Container)
-                && m != Material.ENDER_CHEST) return;
         if (m == Material.ENDER_CHEST) return;
+        if (!(e.getClickedBlock().getState() instanceof org.bukkit.block.Container)) return;
         Village v = villageAt(e.getClickedBlock().getLocation());
         if (v == null || v.guest) return;
         if (!v.residents.contains(e.getPlayer().getUniqueId()) && !e.getPlayer().hasPermission("desa.admin")) {
@@ -315,7 +365,7 @@ public class KotaOtomatis extends JavaPlugin implements Listener {
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] a) {
         if (!(sender instanceof Player p)) { msg(sender, "Hanya untuk pemain."); return true; }
-        if (a.length == 0) { msg(p, "Pakai: /desa <info|daftar|nama|calon|vote|hasil|aturan>"); return true; }
+        if (a.length == 0) { msg(p, "Pakai: /desa <info|daftar|nama|calon|vote|hasil|aturan|keluar>"); return true; }
 
         switch (a[0].toLowerCase()) {
             case "daftar" -> {
@@ -388,8 +438,15 @@ public class KotaOtomatis extends JavaPlugin implements Listener {
                 broadcastVillage(v, "Aturan " + a[1] + " diubah menjadi " + (on ? "on" : "off") + " oleh " + p.getName());
                 saveData();
             }
+            case "keluar" -> {
+                Village v = villageOf(p.getUniqueId());
+                if (v == null) { msg(p, "Kamu belum jadi warga desa."); break; }
+                String nama = v.name;
+                leaveVillage(v, p.getUniqueId());
+                msg(p, "Kamu keluar dari desa " + nama + ".");
+            }
             default -> msg(p, "Perintah tidak dikenal.");
         }
         return true;
     }
-                                            }
+                    }
