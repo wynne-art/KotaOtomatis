@@ -1,0 +1,5 @@
+min-pemain: 3
+min-blok: 50
+jarak-chunk: 6
+radius-desa: 64
+hari-voting: 7
